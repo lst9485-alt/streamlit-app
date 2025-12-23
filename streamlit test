@@ -1,0 +1,248 @@
+import streamlit as st
+import pandas as pd
+import numpy as np
+import altair as alt
+
+# -----------------------------------------------------------------------------
+# 1. 페이지 기본 설정 & CSS 디자인
+# -----------------------------------------------------------------------------
+st.set_page_config(
+    page_title="재테크 통합 솔루션",
+    page_icon="💎",
+    layout="wide"
+)
+
+# 고급스러운 디자인을 위한 커스텀 CSS
+st.markdown("""
+<style>
+    /* 전체 배경색 */
+    .stApp {
+        background-color: #f8f9fa;
+    }
+    /* 주요 지표 카드 디자인 */
+    div[data-testid="stMetric"] {
+        background-color: #ffffff;
+        padding: 15px 20px;
+        border-radius: 10px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        border: 1px solid #e9ecef;
+    }
+    div[data-testid="stMetricLabel"] {
+        font-size: 14px;
+        color: #6c757d;
+    }
+    div[data-testid="stMetricValue"] {
+        font-size: 24px;
+        font-weight: 700;
+        color: #2c3e50;
+    }
+    /* 탭 디자인 */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 10px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        background-color: #ffffff;
+        border-radius: 5px;
+        padding: 10px 20px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: #e3f2fd;
+        color: #1976d2;
+        font-weight: bold;
+    }
+    /* 경고/성공 박스 스타일 */
+    .custom-box {
+        padding: 20px;
+        border-radius: 10px;
+        margin-bottom: 20px;
+    }
+    .box-success { background-color: #e8f5e9; border-left: 5px solid #43a047; }
+    .box-warning { background-color: #ffebee; border-left: 5px solid #e53935; }
+    .box-info { background-color: #e3f2fd; border-left: 5px solid #1e88e5; }
+</style>
+""", unsafe_allow_html=True)
+
+# 헤더 섹션
+st.markdown("### 💎 당신의 미래를 설계하는 **Premium 재테크 시뮬레이터**")
+st.caption("현재 자산과 목표를 입력하면, AI 알고리즘이 은퇴 후 자산 흐름과 부동산 전략을 분석해 드립니다.")
+st.divider()
+
+# -----------------------------------------------------------------------------
+# 2. 사이드바 (입력 패널 - 그룹화하여 깔끔하게 정리)
+# -----------------------------------------------------------------------------
+with st.sidebar:
+    st.header("⚙️ 시뮬레이션 설정")
+    
+    with st.expander("👤 기본 정보 (나이/수명)", expanded=True):
+        col_age1, col_age2 = st.columns(2)
+        current_age = col_age1.number_input("현재 나이", 20, 80, 35)
+        retire_age = col_age2.number_input("은퇴 나이", current_age+1, 90, 60)
+        life_expectancy = st.slider("기대 수명", 80, 100, 90)
+
+    with st.expander("💰 자산 및 저축", expanded=True):
+        current_cash = st.number_input("현재 순자산 (만원)", value=5000, step=100, help="부채를 제외한 순수 자산")
+        monthly_save = st.number_input("월 저축액 (만원)", value=200, step=10)
+        invest_rate = st.slider("연평균 수익률 (%)", 1.0, 15.0, 5.0)
+
+    with st.expander("🏠 부동산 매수 계획", expanded=True):
+        buy_house = st.checkbox("내 집 마련 계획 있음", value=True)
+        if buy_house:
+            house_price = st.number_input("목표 주택 가격 (만원)", value=60000, step=1000)
+            buy_age = st.number_input("매수 예정 나이", current_age, retire_age, current_age+3)
+            loan_ratio = st.slider("대출 비중 (LTV %)", 0, 80, 40)
+            loan_rate = st.number_input("대출 금리 (%)", value=4.0, step=0.1)
+
+    st.markdown("---")
+    st.caption("Designed for 1인 사업가 Solopreneur")
+
+# -----------------------------------------------------------------------------
+# 3. 계산 로직 (Core Logic)
+# -----------------------------------------------------------------------------
+ages = []
+assets = []
+events = []
+cash_flow = [] # 현금 흐름 기록
+
+money = current_cash
+has_house = False
+loan_balance = 0
+house_value = 0
+
+for age in range(current_age, life_expectancy + 1):
+    ages.append(age)
+    
+    # 1. 수입/지출 (은퇴 전후)
+    if age < retire_age:
+        annual_save = monthly_save * 12
+        money += annual_save
+    else:
+        annual_spend = 300 * 12 # 은퇴 후 연 3600만원 지출 가정 (단순화)
+        money -= annual_spend
+
+    # 2. 투자 수익 (복리)
+    money = money * (1 + invest_rate / 100)
+
+    # 3. 부동산 매수 이벤트
+    if buy_house and age == buy_age and not has_house:
+        loan_amount = house_price * (loan_ratio / 100)
+        required_cash = house_price - loan_amount
+        acquisition_tax = house_price * 0.011 
+        
+        # 자금 체크
+        if money >= (required_cash + acquisition_tax):
+            money -= (required_cash + acquisition_tax)
+            loan_balance = loan_amount
+            house_value = house_price
+            has_house = True
+            events.append({"나이": age, "이벤트": f"🏠 아파트 매수 ({house_price/10000:.1f}억)", "유형": "성공"})
+        else:
+            events.append({"나이": age, "이벤트": "❌ 자금 부족으로 매수 실패", "유형": "실패"})
+
+    # 4. 부동산 관리 (이자 상환 및 가치 상승)
+    if has_house:
+        # 이자 납부 (원리금 균등 등 복잡한 로직 대신 이자만 납부로 단순화하여 시뮬레이션)
+        interest_payment = loan_balance * (loan_rate / 100)
+        money -= interest_payment
+        house_value = house_value * 1.02 # 매년 2% 상승 가정
+    
+    # 순자산 합계
+    net_asset = money + (house_value if has_house else 0) - loan_balance
+    assets.append(round(net_asset))
+
+# 데이터프레임 생성
+df_result = pd.DataFrame({'나이': ages, '자산': assets})
+
+# -----------------------------------------------------------------------------
+# 4. 결과 화면 (Tabs 구조)
+# -----------------------------------------------------------------------------
+tab1, tab2, tab3 = st.tabs(["📊 종합 대시보드", "🏠 부동산 분석", "📝 상세 리포트"])
+
+# [Tab 1] 종합 대시보드
+with tab1:
+    # 핵심 지표 카드
+    col_m1, col_m2, col_m3 = st.columns(3)
+    final_asset = assets[-1]
+    retire_asset = assets[retire_age - current_age]
+    
+    col_m1.metric("은퇴 시점 예상 자산", f"{retire_asset:,.0f} 만원", f"{retire_age}세 기준")
+    col_m2.metric("90세 최종 자산", f"{final_asset:,.0f} 만원", delta="여유" if final_asset > 0 else "부족")
+    
+    status_msg = "안정적" if final_asset > 0 else "위험"
+    col_m3.metric("재무 상태 진단", status_msg)
+
+    # 메인 그래프 (Altair Chart로 업그레이드 - 툴팁 기능 추가)
+    st.subheader("📈 생애 자산 흐름도")
+    
+    chart = alt.Chart(df_result).mark_area(
+        line={'color':'#1f77b4'},
+        color=alt.Gradient(
+            gradient='linear',
+            stops=[alt.GradientStop(color='white', offset=0),
+                   alt.GradientStop(color='#1f77b4', offset=1)],
+            x1=1, x2=1, y1=1, y2=0
+        )
+    ).encode(
+        x=alt.X('나이', title='나이 (세)'),
+        y=alt.Y('자산', title='순자산 (만원)'),
+        tooltip=['나이', alt.Tooltip('자산', format=',.0f')]
+    ).properties(height=400)
+    
+    st.altair_chart(chart, use_container_width=True)
+    
+    # AI 코멘트 박스
+    st.subheader("🤖 AI 재무 진단")
+    if final_asset > 0:
+        st.markdown(f"""
+        <div class="custom-box box-success">
+            <b>✅ 훌륭합니다! 탄탄한 노후가 준비되었습니다.</b><br><br>
+            현재 저축 습관과 투자 수익률({invest_rate}%)이 유지된다면, {retire_age}세 은퇴 후에도 자산이 고갈되지 않습니다.
+            90세 시점에도 약 <b>{final_asset:,.0f}만원</b>의 자산이 남아있을 것으로 예상됩니다.
+            이제는 자산을 지키는 '절세 전략'에 집중해보세요.
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown(f"""
+        <div class="custom-box box-warning">
+            <b>⚠️ 주의가 필요합니다! 자산 고갈 위험이 감지되었습니다.</b><br><br>
+            시뮬레이션 결과, 기대 수명 이전에 자금이 부족해질 확률이 높습니다.
+            <br>1. <b>은퇴 시기</b>를 {retire_age + 3}세 정도로 늦추거나
+            <br>2. <b>월 저축액</b>을 {monthly_save + 50}만원 이상으로 늘리는 것을 강력히 권장합니다.
+        </div>
+        """, unsafe_allow_html=True)
+
+# [Tab 2] 부동산 분석
+with tab2:
+    if buy_house:
+        col_r1, col_r2 = st.columns([1, 1])
+        with col_r1:
+            st.info(f"📍 **매수 목표:** {house_price/10000}억 아파트")
+            st.write(f"- 매수 시기: **{buy_age}세**")
+            st.write(f"- 필요 자기자본: **{(house_price * (100-loan_ratio)/100):,.0f} 만원**")
+            st.write(f"- 예상 대출금: **{(house_price * loan_ratio/100):,.0f} 만원**")
+            
+        with col_r2:
+            tax = house_price * 0.011
+            monthly_interest = (house_price * loan_ratio/100) * (loan_rate/100) / 12
+            st.warning("⚠️ **매수 시 고려할 숨은 비용**")
+            st.write(f"- 예상 취득세 등: 약 **{tax:,.0f} 만원**")
+            st.write(f"- 월 대출 이자: 약 **{monthly_interest:,.0f} 만원**")
+            
+        st.caption("※ 취득세는 1주택자 기준 1.1%~3.5%로 단순화하여 계산했습니다.")
+    else:
+        st.info("부동산 매수 계획이 체크되지 않았습니다. 사이드바에서 '내 집 마련 계획 있음'을 체크해보세요.")
+
+# [Tab 3] 상세 리포트
+with tab3:
+    st.write("📊 연도별 자산 변화 상세 표")
+    st.dataframe(
+        df_result.style.format({"자산": "{:,.0f}"}),
+        use_container_width=True,
+        height=400
+    )
+    
+    if events:
+        st.write("🚩 **주요 라이프 이벤트**")
+        for e in events:
+            icon = "✅" if e['유형'] == "성공" else "❌"
+            st.write(f"{icon} **{e['나이']}세:** {e['이벤트']}")
